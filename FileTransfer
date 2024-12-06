@@ -1,0 +1,214 @@
+import Foundation
+import SwiftUI
+
+extension Int {
+    var data: Data {
+        var int = self
+        return Data(bytes: &int, count: MemoryLayout<UInt8>.size)
+    }
+}
+
+extension Data {
+    var uint8: UInt8 {
+        var number: UInt8 = 0
+        copyBytes(to: &number, count: MemoryLayout<UInt8>.size)
+        return number
+    }
+}
+
+let url = URL(string: "https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.41&current=temperature_2m,wind_speed_10m&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m")!
+
+do  {
+    let data = try Data(contentsOf: url)
+    print(data)
+    
+    let dataLen = (data as NSData).length
+    let fullChunks = Int(dataLen / 508)
+    
+    let totalChunks = fullChunks + (dataLen % 508 != 0 ? 1 : 0) //总节数
+    var chunks =  [NSMutableData]()
+    
+    
+    var justForCal = 508
+    
+    //  chunkCounter is current chunk
+    for chunkCounter in 1...totalChunks {
+        var chunk: Data
+        let chunkBase = (chunkCounter - 1) * 508
+        var diff = 508
+        
+        // 如果是最后一节
+        if chunkCounter == totalChunks {
+            diff = dataLen - chunkBase
+            justForCal = diff
+        }
+            
+        let range: Range<Data.Index> = chunkBase..<(chunkBase + diff) // 需要传输的本节数据的区间
+        chunk = data.subdata(in: range) // 需要传输的本节 Main 数据  //littleEndian
+             
+        // chunks 得先接上本节数据头 e.g. [0001 0000 0000 0000] -> littleEndian 再接 需要传输的本节数据
+        // ?? shall we convert data to NSData first, in order to get little Endian?
+        // 最后一节数据的头为 [xxxx xxxx xxxx xxxx]
+        // qrData.append(chunk)
+        
+        // create header data : 0000 0001 , 0000 0000, 0000 0000, 0000 0000
+        var segmentData = NSMutableData()
+        
+//        headerData.append(chunk)
+        if chunkCounter == totalChunks {
+            var ffLittleEndian = 255.littleEndian
+            var littleEndianCounter = ffLittleEndian.littleEndian
+            segmentData.append(&littleEndianCounter, length: 1)
+            segmentData.append(&littleEndianCounter, length: 1)
+            segmentData.append(&littleEndianCounter, length: 1)
+            segmentData.append(&littleEndianCounter, length: 1)
+            
+        } else {
+            //var a: Data = chunkCounter.data //1
+            var zeroLittleEndian = 0.littleEndian // 0
+            var littleEndianCounter = chunkCounter.littleEndian
+            segmentData.append(&littleEndianCounter, length: 1)
+            segmentData.append(&zeroLittleEndian, length: 1)
+            segmentData.append(&zeroLittleEndian, length: 1)
+            segmentData.append(&zeroLittleEndian, length: 1)
+        }
+        //created header data : 0000 0001 , 0000 0000, 0000 0000, 0000 0000
+        //add chunk
+        
+        var chunkDataLittleEndian = chunk.uint8.littleEndian
+        segmentData.append(&chunkDataLittleEndian, length: diff)
+//        var littleEndian = headerData.littleEndian
+        chunks.append(segmentData)
+        
+        /*
+         //do we nee to do littleEndian on chunk? utf8 has no big/little endian
+        segmentData.append(chunk)
+        chunks.append(segmentData)
+        */
+        
+        print("🍞 chunkCounter is \(chunkCounter): \(segmentData)")
+    }
+    // Send chunks as you want
+    // debugPrint("chunkCounter is \(chunks)") //chunks -> send segments one by one
+    var qrData = Data()
+    for i in 0 ..< chunks.count {
+        var characteristicData = chunks[i] as Data
+        var c = characteristicData.subdata(in: 4 ..< characteristicData.count) // convert it from little Endian to Data
+        qrData.append(c)
+    }
+    let str = String(decoding: qrData, as: UTF8.self)
+    //Little Endian
+    print(str)
+}
+catch {
+    // Handle error
+}
+//let a = 1
+//print(a.data)
+
+
+
+
+/***************/
+
+
+import Foundation
+import SwiftUI
+
+extension Int {
+    var data: Data {
+        var int = self
+        return Data(bytes: &int, count: MemoryLayout<UInt8>.size)
+    }
+}
+
+extension Data {
+    var uint8: UInt8 {
+        var number: UInt8 = 0
+        copyBytes(to: &number, count: MemoryLayout<UInt8>.size)
+        return number
+    }
+}
+
+let url = URL(string: "https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.41&current=temperature_2m,wind_speed_10m&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m")!
+
+let contentString: String = try String(contentsOf: url, encoding: .utf8)
+print(contentString)
+
+do  {
+//    let contentString: String = try String(contentsOf: url, encoding: .utf16LittleEndian)
+//    print(contentString)
+    
+//    let data = try Data(contentsOf: url)
+//    print(data)
+    
+    let data = contentString.data(using: .utf8)!
+    let dataLen = (data as NSData).length
+    let fullChunks = Int(dataLen / 508)
+    let totalChunks = fullChunks + (dataLen % 508 != 0 ? 1 : 0) //总节数
+    var chunks =  [NSMutableData]()
+    
+    var justForCal = 508
+    
+    //  chunkCounter is current chunk
+    for chunkCounter in 1...totalChunks {
+        var chunk: Data
+        let chunkBase = (chunkCounter - 1) * 508
+        var diff = 508
+        
+        // 如果是最后一节
+        if chunkCounter == totalChunks {
+            diff = dataLen - chunkBase
+            justForCal = diff
+        }
+            
+        let range: Range<Data.Index> = chunkBase..<(chunkBase + diff) // 需要传输的本节数据的区间
+        chunk = data.subdata(in: range) // 需要传输的本节 Main 数据  //littleEndian
+        // chunks 得先接上本节数据头 e.g. [0001 0000 0000 0000] -> littleEndian 再接 需要传输的本节数据
+        // ?? shall we convert data to NSData first, in order to get little Endian?
+        // 最后一节数据的头为 [xxxx xxxx xxxx xxxx]
+        // qrData.append(chunk)
+        
+        // create header data : 0000 0001 , 0000 0000, 0000 0000, 0000 0000
+        var segmentData = NSMutableData()
+//        headerData.append(chunk)
+        if chunkCounter == totalChunks {
+            var ffLittleEndian = 255.littleEndian
+            var littleEndianCounter = ffLittleEndian.littleEndian
+            segmentData.append(&littleEndianCounter, length: 1)
+            segmentData.append(&littleEndianCounter, length: 1)
+            segmentData.append(&littleEndianCounter, length: 1)
+            segmentData.append(&littleEndianCounter, length: 1)
+            
+        } else {
+            //var a: Data = chunkCounter.data //1
+            var zeroLittleEndian = 0.littleEndian // 0
+            var littleEndianCounter = chunkCounter.littleEndian
+            segmentData.append(&littleEndianCounter, length: 1)
+            segmentData.append(&zeroLittleEndian, length: 1)
+            segmentData.append(&zeroLittleEndian, length: 1)
+            segmentData.append(&zeroLittleEndian, length: 1)
+        }
+        //created header data : 0000 0001 , 0000 0000, 0000 0000, 0000 0000
+        //add chunk
+        
+        segmentData.append(chunk)
+        chunks.append(segmentData)
+        print("🍞 chunkCounter is \(chunkCounter): \(segmentData)")
+    }
+    // Send chunks as you want
+    // debugPrint("chunkCounter is \(chunks)") //chunks -> send segments one by one
+    var qrData = Data()
+    for i in 0 ..< chunks.count {
+        var characteristicData = chunks[i] as Data
+        var c = characteristicData.subdata(in: 4 ..< characteristicData.count) // convert it from little Endian to Data
+        qrData.append(c)
+    }
+    let str = String(decoding: qrData, as: UTF8.self)
+    //Little Endian
+    print(str)
+}
+catch {
+    // Handle error
+}
+
